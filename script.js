@@ -240,6 +240,7 @@ function getScheduleData() {
             'FILA88': 'Angga',
             'IJOBET': 'Jerry',
             'HAHAWIN88': 'Kris',
+            'LOLA88': 'Kris',
             'OFF DAY UG': 'Kheiren'
         },
             evening: {
@@ -591,6 +592,7 @@ function generateScheduleTable() {
 
     tableBody.innerHTML = tableHTML;
 }
+
 
 
 
