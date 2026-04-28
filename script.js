@@ -1,610 +1,943 @@
-// Initialize the application
-document.addEventListener('DOMContentLoaded', function() {
-    updateCurrentDate();
-    generateScheduleTable();
-    setupEventListeners();
+// ============================================
+// SUPABASE CONFIG
+// ============================================
+const SUPABASE_URL = 'https://hnaylgaqriwtpzjhcwnf.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhuYXlsZ2Fxcml3dHB6amhjd25mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczODkyNzAsImV4cCI6MjA5Mjk2NTI3MH0.GH5YFd4mVbhGUj_DiGVjqpZigcIM1AzjW7At6P1P9K4';
+
+const { createClient } = supabase;
+const db = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// ============================================
+// STATE
+// ============================================
+let isAdmin = false;
+let currentMonth = new Date().getMonth() + 1;
+let currentYear = new Date().getFullYear();
+let scheduleData = [];
+let deleteTargetId = null;
+let editTargetId = null;
+
+const WEBSITES = ['suria88', 'hakabet', 'viobet', 'tempo88', 'fila88', 'ijobet', 'hahawin88', 'lola88'];
+const WEBSITE_LABELS = ['SURIA88', 'HAKABET', 'VIOBET', 'TEMPO88', 'FILA88', 'IJOBET', 'HAHAWIN88', 'LOLA88'];
+
+let staffData = []; // loaded from Supabase
+
+const AVATAR_COLORS = [
+  '#2563EB','#7C3AED','#DB2777','#D97706','#059669',
+  '#DC2626','#0891B2','#65A30D','#9333EA','#EA580C',
+  '#0284C7','#16A34A','#CA8A04','#E11D48','#7C3AED',
+  '#0D9488','#B45309','#4F46E5','#BE185D','#15803D'
+];
+
+// ============================================
+// INIT
+// ============================================
+document.addEventListener('DOMContentLoaded', async () => {
+  updateTime();
+  setInterval(updateTime, 1000);
+  updateMonthLabel();
+
+  // Check existing session
+  const { data: { session } } = await db.auth.getSession();
+  if (session) setAdminMode(true);
+
+  // Auth state change
+  db.auth.onAuthStateChange((event, session) => {
+    if (event === 'SIGNED_IN') setAdminMode(true);
+    if (event === 'SIGNED_OUT') setAdminMode(false);
+  });
+
+  await loadStaff();
+  await loadSchedule();
+
+  // Live range preview
+  ['formDateFrom', 'formDateTo'].forEach(id => {
+    document.getElementById(id)?.addEventListener('change', updateRangePreview);
+  });
 });
 
-// Update current date in header
-function updateCurrentDate() {
-    const dateElement = document.getElementById('currentDate');
-    const now = new Date();
-    const options = {
-        weekday: 'long',
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
+// ============================================
+// TIME
+// ============================================
+function updateTime() {
+  const el = document.getElementById('liveTime');
+  if (!el) return;
+  const now = new Date();
+  el.textContent = now.toLocaleString('en-US', {
+    weekday: 'short', month: 'short', day: 'numeric',
+    hour: '2-digit', minute: '2-digit', second: '2-digit'
+  });
+}
+
+// ============================================
+// MONTH NAV
+// ============================================
+function updateMonthLabel() {
+  const label = new Date(currentYear, currentMonth - 1, 1)
+    .toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  document.getElementById('monthLabel').textContent = label;
+  document.getElementById('tableTitle').textContent = label;
+}
+
+function changeMonth(dir) {
+  currentMonth += dir;
+  if (currentMonth > 12) { currentMonth = 1; currentYear++; }
+  if (currentMonth < 1) { currentMonth = 12; currentYear--; }
+  updateMonthLabel();
+  loadSchedule();
+}
+
+// ============================================
+// ADMIN AUTH
+// ============================================
+function setAdminMode(admin) {
+  isAdmin = admin;
+  const dot = document.querySelector('.auth-dot');
+  const label = document.getElementById('authLabel');
+  const btn = document.getElementById('authBtn');
+  const btnLabel = document.getElementById('authBtnLabel');
+  const panel = document.getElementById('adminPanel');
+  const actionHeader = document.getElementById('actionHeader');
+
+  if (admin) {
+    dot.className = 'auth-dot admin';
+    label.textContent = 'Admin';
+    btn.className = 'btn-auth logout';
+    btnLabel.textContent = 'Sign Out';
+    panel.style.display = 'block';
+    actionHeader.style.display = '';
+    document.getElementById('bulkToolbar').style.display = 'flex';
+    document.getElementById('checkHeader').style.display = '';
+  } else {
+    dot.className = 'auth-dot viewer';
+    label.textContent = 'View Only';
+    btn.className = 'btn-auth';
+    btnLabel.textContent = 'Admin Login';
+    panel.style.display = 'none';
+    actionHeader.style.display = 'none';
+    document.getElementById('bulkToolbar').style.display = 'none';
+    document.getElementById('checkHeader').style.display = 'none';
+  }
+
+  const addStaffBtn = document.getElementById('addStaffBtn');
+  if (addStaffBtn) addStaffBtn.style.display = admin ? 'flex' : 'none';
+
+  renderTable();
+  renderStaffGrid();
+}
+
+function handleAuthClick() {
+  if (isAdmin) {
+    db.auth.signOut();
+    showToast('Signed out');
+  } else {
+    openLoginModal();
+  }
+}
+
+// Login modal
+function openLoginModal() {
+  document.getElementById('loginModal').classList.add('open');
+  setTimeout(() => document.getElementById('loginEmail').focus(), 100);
+}
+function closeLoginModal() {
+  document.getElementById('loginModal').classList.remove('open');
+  document.getElementById('loginError').textContent = '';
+}
+
+async function adminLogin() {
+  const email = document.getElementById('loginEmail').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  const btn = document.getElementById('loginBtn');
+  const errEl = document.getElementById('loginError');
+
+  if (!email || !password) { errEl.textContent = 'Please fill in all fields.'; return; }
+
+  btn.disabled = true;
+  document.getElementById('loginBtnText').textContent = 'Signing in...';
+  errEl.textContent = '';
+
+  const { error } = await db.auth.signInWithPassword({ email, password });
+
+  btn.disabled = false;
+  document.getElementById('loginBtnText').textContent = 'Sign In';
+
+  if (error) {
+    errEl.textContent = 'Invalid email or password.';
+  } else {
+    closeLoginModal();
+    showToast('Welcome, Admin! ✓', 'success');
+  }
+}
+
+// Enter key on login
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && document.getElementById('loginModal').classList.contains('open')) {
+    adminLogin();
+  }
+});
+
+// ============================================
+// LOAD SCHEDULE
+// ============================================
+async function loadSchedule() {
+  const tbody = document.getElementById('scheduleBody');
+  tbody.innerHTML = `<tr><td colspan="12" class="loading-row"><div class="spinner"></div>Loading schedule...</td></tr>`;
+
+  // Get proper last day of month
+  const lastDay = new Date(currentYear, currentMonth, 0).getDate();
+  const startDate = `${currentYear}-${String(currentMonth).padStart(2,'0')}-01`;
+  const endDate = `${currentYear}-${String(currentMonth).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
+
+  const { data, error } = await db
+    .from('schedules')
+    .select('*')
+    .gte('date', startDate)
+    .lte('date', endDate)
+    .order('date', { ascending: true });
+
+  if (error) {
+    console.error('Supabase error:', error);
+    tbody.innerHTML = `<tr><td colspan="12" class="empty-row">Failed to load schedule: ${error.message}</td></tr>`;
+    return;
+  }
+
+  // Sort: morning before evening after fetching
+  data && data.sort((a, b) => {
+    if (a.date !== b.date) return a.date.localeCompare(b.date);
+    return a.shift === 'morning' ? -1 : 1;
+  });
+
+  scheduleData = data || [];
+  renderTable();
+}
+
+// ============================================
+// RENDER TABLE
+// ============================================
+function renderTable() {
+  const tbody = document.getElementById('scheduleBody');
+
+  if (!scheduleData.length) {
+    tbody.innerHTML = `<tr><td colspan="12" class="empty-row">No schedule found for this month.</td></tr>`;
+    return;
+  }
+
+  // Group by date
+  const grouped = {};
+  scheduleData.forEach(row => {
+    if (!grouped[row.date]) grouped[row.date] = {};
+    grouped[row.date][row.shift] = row;
+  });
+
+  let html = '';
+  const dates = Object.keys(grouped).sort();
+
+  dates.forEach(dateStr => {
+    const dayData = grouped[dateStr];
+    const d = new Date(dateStr + 'T12:00:00');
+    const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
+    const dayNum = d.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
+
+    const shifts = [];
+    if (dayData.morning) shifts.push({ shift: 'morning', row: dayData.morning });
+    if (dayData.evening) shifts.push({ shift: 'evening', row: dayData.evening });
+
+    shifts.forEach(({ shift, row }, idx) => {
+      const rowClass = shift === 'morning' ? 'day-row' : 'night-row';
+      const isFirst = idx === 0;
+
+      html += `<tr class="${rowClass}" data-id="${row.id}">`;
+
+      // Checkbox (admin only)
+      if (isAdmin) {
+        html += `<td class="check-cell">
+          <label class="checkbox-wrap">
+            <input type="checkbox" class="row-check" value="${row.id}" onchange="updateBulkCount()">
+            <span class="checkmark"></span>
+          </label>
+        </td>`;
+      }
+
+      // Date cell — rowspan covers both shifts of same day
+      if (isFirst) {
+        html += `<td class="date-cell" rowspan="${shifts.length}">
+          <div class="date-day">${dayName}</div>
+          <div class="date-num">${dayNum}</div>
+        </td>`;
+      }
+
+      // Shift badge cell
+      html += `<td style="text-align:center">
+        <span class="shift-badge ${shift === 'morning' ? 'day' : 'night'}">
+          ${shift === 'morning' ? '☀ Day' : '☽ Night'}
+        </span>
+      </td>`;
+
+      WEBSITES.forEach(site => {
+        const val = row[site];
+        const isEmpty = !val || val === '-';
+        html += `<td class="staff-cell ${isEmpty ? 'empty' : ''}">${val || '—'}</td>`;
+      });
+
+      // Offday
+      html += `<td class="offday-cell">${row.offday || ''}</td>`;
+
+      // Actions (admin only)
+      if (isAdmin) {
+        html += `<td class="action-cell" style="display:''">
+          <button class="btn-edit" onclick="openEditModal('${row.id}')">Edit</button>
+          <button class="btn-del" onclick="openDeleteModal('${row.id}')">Del</button>
+        </td>`;
+      }
+
+      html += `</tr>`;
+    });
+  });
+
+  tbody.innerHTML = html;
+}
+
+// ============================================
+// LOAD STAFF FROM SUPABASE
+// ============================================
+async function loadStaff() {
+  const { data, error } = await db
+    .from('staff')
+    .select('*')
+    .eq('is_active', true)
+    .order('shift')
+    .order('name');
+
+  if (!error) {
+    staffData = data || [];
+    renderRosterBubbles();
+    renderStaffGrid();
+    populateStaffDropdowns();
+  }
+}
+
+function renderRosterBubbles() {
+  const dayEl = document.getElementById('dayShiftBubbles');
+  const nightEl = document.getElementById('nightShiftBubbles');
+
+  const day = staffData.filter(s => s.shift === 'morning');
+  const night = staffData.filter(s => s.shift === 'evening');
+
+  dayEl.innerHTML = day.map(s => `<span class="bubble day">${s.name}</span>`).join('');
+  nightEl.innerHTML = night.map(s => `<span class="bubble night">${s.name}</span>`).join('');
+}
+
+// ============================================
+// POPULATE STAFF DROPDOWNS
+// ============================================
+function populateStaffDropdowns(selectedValues = {}) {
+  const dayStaff = staffData.filter(s => s.shift === 'morning');
+  const nightStaff = staffData.filter(s => s.shift === 'evening');
+
+  WEBSITES.forEach(site => {
+    const el = document.getElementById('form' + capitalize(site));
+    if (!el) return;
+
+    el.innerHTML = `<option value="">— Empty —</option>`;
+
+    if (dayStaff.length) {
+      const dayGroup = document.createElement('optgroup');
+      dayGroup.label = '☀ Day Shift';
+      dayStaff.forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s.name;
+        opt.textContent = s.name;
+        dayGroup.appendChild(opt);
+      });
+      el.appendChild(dayGroup);
+    }
+
+    if (nightStaff.length) {
+      const nightGroup = document.createElement('optgroup');
+      nightGroup.label = '☽ Night Shift';
+      nightStaff.forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s.name;
+        opt.textContent = s.name;
+        nightGroup.appendChild(opt);
+      });
+      el.appendChild(nightGroup);
+    }
+
+    if (selectedValues[site]) el.value = selectedValues[site];
+  });
+}
+
+// ============================================
+// RENDER STAFF GRID
+// ============================================
+function renderStaffGrid() {
+  const grid = document.getElementById('staffGrid');
+  const countEl = document.getElementById('staffCount');
+  if (!grid) return;
+
+  if (!staffData.length) {
+    grid.innerHTML = `<div style="color:var(--text-3);font-size:.9rem;grid-column:1/-1">No staff found.</div>`;
+    return;
+  }
+
+  if (countEl) countEl.textContent = `${staffData.length} members`;
+
+  grid.innerHTML = staffData.map((s, i) => {
+    const initials = s.name.slice(0, 2).toUpperCase();
+    const color = AVATAR_COLORS[i % AVATAR_COLORS.length];
+    const shiftLabel = s.shift === 'morning' ? '☀ Day Shift' : '☽ Night Shift';
+    const shiftClass = s.shift === 'morning' ? 'day' : 'night';
+
+    const adminActions = isAdmin ? `
+      <div class="staff-card-actions">
+        <button class="btn-edit" onclick="openEditStaffModal('${s.id}')">Edit</button>
+        <button class="btn-del" onclick="openDeleteStaffModal('${s.id}', '${s.name}')">Remove</button>
+      </div>` : '';
+
+    return `
+      <div class="staff-card">
+        <div class="staff-card-top">
+          <div class="staff-avatar" style="background:${color}">${initials}</div>
+          <div>
+            <div class="staff-name">${s.name}</div>
+            <span class="staff-shift-badge ${shiftClass}">${shiftLabel}</span>
+          </div>
+        </div>
+        ${adminActions}
+      </div>`;
+  }).join('');
+}
+
+// ============================================
+// STAFF CRUD
+// ============================================
+let editStaffId = null;
+let deleteStaffId = null;
+
+function openAddStaffModal() {
+  editStaffId = null;
+  document.getElementById('staffModalTitle').textContent = 'Add Staff';
+  document.getElementById('saveStaffBtnText').textContent = 'Add Staff';
+  document.getElementById('staffName').value = '';
+  document.getElementById('staffShift').value = 'morning';
+  document.getElementById('staffError').textContent = '';
+  document.getElementById('staffModal').classList.add('open');
+  setTimeout(() => document.getElementById('staffName').focus(), 100);
+}
+
+function openEditStaffModal(id) {
+  const s = staffData.find(x => x.id === id);
+  if (!s) return;
+  editStaffId = id;
+  document.getElementById('staffModalTitle').textContent = 'Edit Staff';
+  document.getElementById('saveStaffBtnText').textContent = 'Update';
+  document.getElementById('staffName').value = s.name;
+  document.getElementById('staffShift').value = s.shift;
+  document.getElementById('staffError').textContent = '';
+  document.getElementById('staffModal').classList.add('open');
+}
+
+function closeStaffModal() {
+  document.getElementById('staffModal').classList.remove('open');
+}
+
+async function saveStaff() {
+  const name = document.getElementById('staffName').value.trim();
+  const shift = document.getElementById('staffShift').value;
+  const errEl = document.getElementById('staffError');
+  const btn = document.getElementById('saveStaffBtn');
+
+  if (!name) { errEl.textContent = 'Please enter a name.'; return; }
+
+  btn.disabled = true;
+  document.getElementById('saveStaffBtnText').textContent = 'Saving...';
+  errEl.textContent = '';
+
+  let error;
+  if (editStaffId) {
+    ({ error } = await db.from('staff').update({ name, shift }).eq('id', editStaffId));
+  } else {
+    ({ error } = await db.from('staff').insert({ name, shift, is_active: true }));
+  }
+
+  btn.disabled = false;
+  document.getElementById('saveStaffBtnText').textContent = editStaffId ? 'Update' : 'Add Staff';
+
+  if (error) { errEl.textContent = 'Error: ' + error.message; return; }
+
+  closeStaffModal();
+  showToast(editStaffId ? `${name} updated ✓` : `${name} added ✓`, 'success');
+  await loadStaff();
+}
+
+function openDeleteStaffModal(id, name) {
+  deleteStaffId = id;
+  document.getElementById('deleteStaffName').textContent = `Remove "${name}" from the team?`;
+  document.getElementById('deleteStaffModal').classList.add('open');
+}
+
+function closeDeleteStaffModal() {
+  document.getElementById('deleteStaffModal').classList.remove('open');
+  deleteStaffId = null;
+}
+
+async function confirmDeleteStaff() {
+  if (!deleteStaffId) return;
+  const { error } = await db.from('staff').delete().eq('id', deleteStaffId);
+  closeDeleteStaffModal();
+  if (error) { showToast('Failed to remove staff', 'error'); return; }
+  showToast('Staff removed', 'success');
+  await loadStaff();
+}
+
+
+
+
+function openAddModal() {
+  editTargetId = null;
+  document.getElementById('scheduleModalTitle').textContent = 'Add Schedule';
+  document.getElementById('saveBtnText').textContent = 'Save Schedule';
+  // Show range fields for add
+  document.getElementById('formDateSection').style.display = '';
+  document.getElementById('formDateToGroup').style.display = '';
+  document.getElementById('formDateSingle').style.display = 'none';
+  clearScheduleForm();
+  populateStaffDropdowns();
+  document.getElementById('scheduleModal').classList.add('open');
+}
+
+function openEditModal(id) {
+  const row = scheduleData.find(r => r.id === id);
+  if (!row) return;
+
+  editTargetId = id;
+  document.getElementById('scheduleModalTitle').textContent = 'Edit Schedule';
+  document.getElementById('saveBtnText').textContent = 'Update Schedule';
+
+  // Hide range, show single date for edit
+  document.getElementById('formDateSection').style.display = 'none';
+  document.getElementById('formDateSingle').style.display = '';
+  document.getElementById('formDate').value = row.date;
+  document.getElementById('formShift').value = row.shift;
+
+  const selectedValues = {};
+  WEBSITES.forEach(site => { selectedValues[site] = row[site] || ''; });
+  populateStaffDropdowns(selectedValues);
+
+  document.getElementById('formOffday').value = row.offday || '';
+  document.getElementById('scheduleModal').classList.add('open');
+}
+
+function closeScheduleModal() {
+  document.getElementById('scheduleModal').classList.remove('open');
+  document.getElementById('scheduleError').textContent = '';
+  const preview = document.getElementById('rangePreview');
+  if (preview) preview.remove();
+}
+
+function clearScheduleForm() {
+  document.getElementById('formDateFrom').value = '';
+  document.getElementById('formDateTo').value = '';
+  document.getElementById('formDate').value = '';
+  document.getElementById('formShift').value = 'morning';
+  WEBSITES.forEach(site => {
+    const el = document.getElementById('form' + capitalize(site));
+    if (el) el.value = '';
+  });
+  document.getElementById('formOffday').value = '';
+  document.getElementById('scheduleError').textContent = '';
+}
+
+function updateRangePreview() {
+  const from = document.getElementById('formDateFrom').value;
+  const to = document.getElementById('formDateTo').value;
+  let preview = document.getElementById('rangePreview');
+
+  if (!from) {
+    if (preview) preview.remove();
+    return;
+  }
+
+  const fromD = new Date(from + 'T12:00:00');
+  const toD = to ? new Date(to + 'T12:00:00') : fromD;
+  const days = Math.round((toD - fromD) / 86400000) + 1;
+
+  if (!preview) {
+    preview = document.createElement('div');
+    preview.id = 'rangePreview';
+    preview.className = 'range-preview';
+    document.getElementById('formDateSection').after(preview);
+  }
+
+  if (days <= 0) {
+    preview.textContent = '⚠ End date must be after start date';
+    preview.style.color = 'var(--danger)';
+    preview.style.background = 'var(--off-light)';
+  } else if (days === 1) {
+    preview.textContent = `📅 Single day: ${fromD.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}`;
+    preview.style.color = 'var(--accent)';
+    preview.style.background = 'var(--accent-light)';
+  } else {
+    preview.textContent = `📅 ${days} days: ${fromD.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} to ${toD.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+    preview.style.color = 'var(--accent)';
+    preview.style.background = 'var(--accent-light)';
+  }
+}
+
+
+async function saveSchedule() {
+  const shift = document.getElementById('formShift').value;
+  const errEl = document.getElementById('scheduleError');
+  const btn = document.getElementById('saveScheduleBtn');
+  errEl.textContent = '';
+
+  // Build website payload
+  const sitePayload = {};
+  WEBSITES.forEach(site => {
+    const el = document.getElementById('form' + capitalize(site));
+    sitePayload[site] = el ? (el.value.trim() || null) : null;
+  });
+  const offday = document.getElementById('formOffday').value.trim() || null;
+
+  // ---- EDIT MODE (single date) ----
+  if (editTargetId) {
+    const date = document.getElementById('formDate').value;
+    if (!date) { errEl.textContent = 'Please select a date.'; return; }
+
+    const payload = {
+      date, shift,
+      day_name: new Date(date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long' }),
+      ...sitePayload, offday
     };
-    dateElement.textContent = now.toLocaleDateString('en-US', options);
-}
 
+    btn.disabled = true;
+    document.getElementById('saveBtnText').textContent = 'Saving...';
+    const { error } = await db.from('schedules').update(payload).eq('id', editTargetId);
+    btn.disabled = false;
+    document.getElementById('saveBtnText').textContent = 'Update Schedule';
 
+    if (error) { errEl.textContent = 'Error: ' + error.message; return; }
+    closeScheduleModal();
+    showToast('Schedule updated ✓', 'success');
+    await loadSchedule();
+    return;
+  }
 
-// Setup event listeners
-function setupEventListeners() {
-    const searchInput = document.getElementById('searchInput');
-    
-    // Search on Enter key press
-    searchInput.addEventListener('keypress', function(e) {
-        if (e.key === 'Enter') {
-            searchStaff();
-        }
+  // ---- ADD MODE (date range) ----
+  const dateFrom = document.getElementById('formDateFrom').value;
+  const dateTo = document.getElementById('formDateTo').value || dateFrom;
+
+  if (!dateFrom) { errEl.textContent = 'Please select a start date.'; return; }
+
+  const from = new Date(dateFrom + 'T12:00:00');
+  const to = new Date(dateTo + 'T12:00:00');
+
+  if (to < from) { errEl.textContent = 'End date must be after start date.'; return; }
+
+  // Generate all dates in range
+  const allDates = [];
+  const cursor = new Date(from);
+  while (cursor <= to) {
+    allDates.push(cursor.toISOString().split('T')[0]);
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  const totalDays = allDates.length;
+  btn.disabled = true;
+  document.getElementById('saveBtnText').textContent = `Saving ${totalDays} day${totalDays > 1 ? 's' : ''}...`;
+
+  // Fetch existing rows for this date range + shift to merge
+  const { data: existing } = await db
+    .from('schedules')
+    .select('*')
+    .in('date', allDates)
+    .eq('shift', shift);
+
+  const existingMap = {};
+  (existing || []).forEach(r => { existingMap[r.date] = r; });
+
+  // Build merged rows — only overwrite non-empty fields from form
+  const rows = allDates.map(dateStr => {
+    const prev = existingMap[dateStr] || {};
+    const merged = {
+      date: dateStr,
+      shift,
+      day_name: new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long' }),
+    };
+
+    // For each website: use new value if filled, keep existing if not
+    WEBSITES.forEach(site => {
+      merged[site] = sitePayload[site] || prev[site] || null;
     });
-    
-    // Real-time search as user types
-    searchInput.addEventListener('input', function() {
-        if (this.value === '') {
-            clearSearch();
-        } else {
-            searchStaff();
-        }
+
+    // For offday: use new value if filled, keep existing if not
+    merged.offday = offday || prev.offday || null;
+
+    // Keep existing id if updating
+    if (prev.id) merged.id = prev.id;
+
+    return merged;
+  });
+
+  const { error } = await db.from('schedules').upsert(rows, {
+    onConflict: 'date,shift',
+    ignoreDuplicates: false
+  });
+
+  btn.disabled = false;
+  document.getElementById('saveBtnText').textContent = 'Save Schedule';
+
+  if (error) {
+    errEl.textContent = 'Error: ' + error.message;
+    return;
+  }
+
+  closeScheduleModal();
+  showToast(`${totalDays} day${totalDays > 1 ? 's' : ''} saved ✓`, 'success');
+  await loadSchedule();
+}
+
+// ============================================
+// BULK DELETE
+// ============================================
+let bulkDeleteAction = null; // 'selected' | 'morning' | 'evening' | 'all'
+
+function updateBulkCount() {
+  const checked = document.querySelectorAll('.row-check:checked');
+  const total = document.querySelectorAll('.row-check');
+  const countEl = document.getElementById('bulkCount');
+  const btn = document.getElementById('btnDeleteSelected');
+  const selectAll = document.getElementById('selectAll');
+  const selectAllHead = document.getElementById('selectAllHead');
+
+  countEl.textContent = checked.length > 0 ? `${checked.length} selected` : `0 selected`;
+  btn.disabled = checked.length === 0;
+
+  // Sync select-all checkboxes
+  const allChecked = checked.length === total.length && total.length > 0;
+  const someChecked = checked.length > 0 && !allChecked;
+  if (selectAll) { selectAll.checked = allChecked; selectAll.indeterminate = someChecked; }
+  if (selectAllHead) { selectAllHead.checked = allChecked; selectAllHead.indeterminate = someChecked; }
+}
+
+function toggleSelectAll(checked) {
+  document.querySelectorAll('.row-check').forEach(cb => cb.checked = checked);
+  // Sync both checkboxes
+  const sa = document.getElementById('selectAll');
+  const sah = document.getElementById('selectAllHead');
+  if (sa) sa.checked = checked;
+  if (sah) sah.checked = checked;
+  updateBulkCount();
+}
+
+function bulkDeleteSelected() {
+  const checked = document.querySelectorAll('.row-check:checked');
+  if (!checked.length) return;
+  bulkDeleteAction = 'selected';
+  document.getElementById('bulkDeleteTitle').textContent = 'Delete Selected';
+  document.getElementById('bulkDeleteSub').textContent = `Delete ${checked.length} selected row${checked.length > 1 ? 's' : ''}? This cannot be undone.`;
+  document.getElementById('bulkDeleteModal').classList.add('open');
+}
+
+function bulkDeleteShift(shift) {
+  const count = scheduleData.filter(r => r.shift === shift).length;
+  if (!count) { showToast('No rows to delete', 'error'); return; }
+  bulkDeleteAction = shift;
+  const label = shift === 'morning' ? 'Day (Morning)' : 'Night (Evening)';
+  document.getElementById('bulkDeleteTitle').textContent = `Delete All ${label} Shift`;
+  document.getElementById('bulkDeleteSub').textContent = `Delete all ${count} ${label} rows this month? This cannot be undone.`;
+  document.getElementById('bulkDeleteModal').classList.add('open');
+}
+
+function bulkDeleteAll() {
+  if (!scheduleData.length) { showToast('No schedule to delete', 'error'); return; }
+  bulkDeleteAction = 'all';
+  document.getElementById('bulkDeleteTitle').textContent = 'Delete Entire Month';
+  document.getElementById('bulkDeleteSub').textContent = `Delete all ${scheduleData.length} rows for this month? This cannot be undone.`;
+  document.getElementById('bulkDeleteModal').classList.add('open');
+}
+
+function closeBulkDeleteModal() {
+  document.getElementById('bulkDeleteModal').classList.remove('open');
+  bulkDeleteAction = null;
+}
+
+async function confirmBulkDelete() {
+  // Collect IDs FIRST before closing modal (closing resets bulkDeleteAction)
+  let ids = [];
+
+  if (bulkDeleteAction === 'selected') {
+    ids = [...document.querySelectorAll('.row-check:checked')].map(cb => cb.value);
+  } else if (bulkDeleteAction === 'morning' || bulkDeleteAction === 'evening') {
+    ids = scheduleData.filter(r => r.shift === bulkDeleteAction).map(r => r.id);
+  } else if (bulkDeleteAction === 'all') {
+    ids = scheduleData.map(r => r.id);
+  }
+
+  closeBulkDeleteModal();
+
+  if (!ids.length) { showToast('No rows found to delete', 'error'); return; }
+
+  showToast(`Deleting ${ids.length} row${ids.length > 1 ? 's' : ''}...`);
+
+  const { error } = await db.from('schedules').delete().in('id', ids);
+
+  if (error) {
+    showToast('Delete failed: ' + error.message, 'error');
+    return;
+  }
+
+  showToast(`${ids.length} row${ids.length > 1 ? 's' : ''} deleted ✓`, 'success');
+  updateBulkCount();
+  await loadSchedule();
+}
+
+// ============================================
+// DELETE (single)
+// ============================================
+function openDeleteModal(id) {
+  deleteTargetId = id;
+  document.getElementById('deleteModal').classList.add('open');
+}
+function closeDeleteModal() {
+  document.getElementById('deleteModal').classList.remove('open');
+  deleteTargetId = null;
+}
+
+async function confirmDelete() {
+  if (!deleteTargetId) return;
+  const { error } = await db.from('schedules').delete().eq('id', deleteTargetId);
+  closeDeleteModal();
+  if (error) { showToast('Delete failed', 'error'); return; }
+  showToast('Schedule deleted', 'success');
+  await loadSchedule();
+}
+
+// ============================================
+// SEARCH
+// ============================================
+function handleSearch(val) {
+  const clearBtn = document.getElementById('searchClear');
+  const resultsPanel = document.getElementById('searchResults');
+
+  if (!val.trim()) {
+    clearBtn.style.display = 'none';
+    resultsPanel.style.display = 'none';
+    return;
+  }
+
+  clearBtn.style.display = 'flex';
+  const term = val.toLowerCase();
+  const results = [];
+
+  scheduleData.forEach(row => {
+    WEBSITES.forEach((site, i) => {
+      const staff = row[site];
+      if (staff && staff.toLowerCase().includes(term)) {
+        results.push({
+          name: staff,
+          date: row.date,
+          shift: row.shift,
+          website: WEBSITE_LABELS[i]
+        });
+      }
     });
-    
+  });
 
+  if (!results.length) {
+    resultsPanel.style.display = 'block';
+    resultsPanel.innerHTML = `
+      <div class="search-results-header">
+        <h4>No results for "${val}"</h4>
+      </div>`;
+    return;
+  }
+
+  let html = `
+    <div class="search-results-header">
+      <h4>Results for "${val}"</h4>
+      <span class="search-results-count">${results.length} found</span>
+    </div>
+    <div class="search-results-list">
+  `;
+
+  results.forEach(r => {
+    const d = new Date(r.date + 'T12:00:00');
+    const dateStr = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    html += `
+      <div class="search-result-row">
+        <span class="sr-name">${r.name}</span>
+        <span class="sr-date">${dateStr}</span>
+        <span class="sr-shift ${r.shift}">${r.shift === 'morning' ? '☀ Day' : '☽ Night'}</span>
+        <span class="sr-website">${r.website}</span>
+      </div>`;
+  });
+
+  html += `</div>`;
+  resultsPanel.innerHTML = html;
+  resultsPanel.style.display = 'block';
 }
 
-// Search functionality
-function searchStaff() {
-    const searchInput = document.getElementById('searchInput');
-    const searchTerm = searchInput.value.toLowerCase().trim();
-    
-    if (searchTerm === '') {
-        // If search is empty, hide search results
-        hideSearchResults();
-        return;
-    }
-    
-    // Search through schedule data and show detailed results
-    const foundResults = findStaffSchedule(searchTerm);
-    
-    if (foundResults.length > 0) {
-        showDetailedSearchResults(searchTerm);
-    } else {
-        showNoResultsMessage();
-    }
-}
-
-// Clear search
 function clearSearch() {
-    const searchInput = document.getElementById('searchInput');
-    searchInput.value = '';
-    
-    // Hide no results message if visible
-    const noResultsMsg = document.getElementById('noResultsMessage');
-    if (noResultsMsg) {
-        noResultsMsg.remove();
-    }
-    
-    hideSearchResults();
+  document.getElementById('searchInput').value = '';
+  document.getElementById('searchClear').style.display = 'none';
+  document.getElementById('searchResults').style.display = 'none';
 }
 
-// Show no results message
-function showNoResultsMessage() {
-    // Remove existing message if any
-    const existingMsg = document.getElementById('noResultsMessage');
-    if (existingMsg) {
-        existingMsg.remove();
-    }
-    
-    const message = document.createElement('div');
-    message.id = 'noResultsMessage';
-    message.className = 'no-results-message';
-    message.innerHTML = `
-        <div style="
-            text-align: center;
-            padding: 40px;
-            color: #94a3b8;
-            font-size: 1.1rem;
-            background: rgba(239, 68, 68, 0.1);
-            border: 1px solid rgba(239, 68, 68, 0.3);
-            border-radius: 12px;
-            margin: 20px 0;
-        ">
-            <div style="font-size: 2rem; margin-bottom: 10px;">🔍</div>
-            <div>No staff found matching your search criteria</div>
-            <div style="font-size: 0.9rem; margin-top: 5px; color: #64748b;">
-                Try searching for a different name or website
-            </div>
-        </div>
-    `;
-    
-    // Insert message after search section
-    const searchSection = document.querySelector('.search-section');
-    searchSection.parentNode.insertBefore(message, searchSection.nextSibling);
-    
-    // Remove message after 3 seconds
-    setTimeout(() => {
-        if (message.parentNode) {
-            message.remove();
-        }
-    }, 3000);
+// ============================================
+// VIEW NAVIGATION
+// ============================================
+function showView(name) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('view' + capitalize(name)).classList.add('active');
+  document.querySelectorAll('.nav-item')[name === 'schedule' ? 0 : 1].classList.add('active');
+  document.getElementById('pageTitle').textContent = capitalize(name);
+
+  // Close sidebar on mobile after nav
+  if (window.innerWidth < 768) {
+    document.getElementById('sidebar').classList.remove('open');
+  }
 }
 
-// Hide no results message
-function hideNoResultsMessage() {
-    const message = document.getElementById('noResultsMessage');
-    if (message) {
-        message.remove();
-    }
+// ============================================
+// SIDEBAR TOGGLE (MOBILE)
+// ============================================
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('open');
 }
 
-// Show detailed search results
-function showDetailedSearchResults(searchTerm) {
-    hideSearchResults();
-    
-    const staffSchedule = findStaffSchedule(searchTerm);
-    if (staffSchedule.length === 0) return;
-    
-    const searchResultsContainer = document.createElement('div');
-    searchResultsContainer.id = 'searchResults';
-    searchResultsContainer.className = 'search-results';
-    
-    let resultsHTML = `
-        <div class="search-results-header">
-            <h3>Search Results for "${searchTerm}"</h3>
-            <p class="search-results-count">${staffSchedule.length} assignment${staffSchedule.length > 1 ? 's' : ''} found</p>
-        </div>
-        <div class="search-results-content">
-    `;
-    
-    staffSchedule.forEach(assignment => {
-        const formattedDate = new Date(assignment.date).toLocaleDateString('en-US', {
-            weekday: 'short',
-            month: 'short',
-            day: 'numeric',
-            year: 'numeric'
-        });
-        
-        resultsHTML += `
-            <div class="search-result-item">
-                <div class="result-header">
-                    <span class="result-staff-name">${assignment.staffName}</span>
-                    <span class="result-date">${formattedDate}</span>
-                    <span class="result-shift ${assignment.shift}">${assignment.shift.toUpperCase()}</span>
-                </div>
-                <div class="result-websites">
-                    <strong>Websites:</strong> ${assignment.websites}
-                </div>
-            </div>
-        `;
-    });
-    
-    resultsHTML += `
-        </div>
-    `;
-    
-    searchResultsContainer.innerHTML = resultsHTML;
-    
-    // Insert after search section
-    const searchSection = document.querySelector('.search-section');
-    searchSection.parentNode.insertBefore(searchResultsContainer, searchSection.nextSibling);
+// Close sidebar when clicking outside on mobile
+document.addEventListener('click', (e) => {
+  if (window.innerWidth >= 768) return;
+  const sidebar = document.getElementById('sidebar');
+  const toggle = document.querySelector('.menu-toggle');
+  if (!sidebar.contains(e.target) && !toggle.contains(e.target)) {
+    sidebar.classList.remove('open');
+  }
+});
+
+// ============================================
+// TOAST
+// ============================================
+function showToast(msg, type = '') {
+  const existing = document.querySelector('.toast');
+  if (existing) existing.remove();
+
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.textContent = msg;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 3000);
 }
 
-// Hide search results
-function hideSearchResults() {
-    const results = document.getElementById('searchResults');
-    if (results) {
-        results.remove();
-    }
+// ============================================
+// UTILS
+// ============================================
+function capitalize(str) {
+  if (!str) return '';
+  // Handle compound field names like 'hahawin88' -> 'Hahawin88'
+  return str.charAt(0).toUpperCase() + str.slice(1);
 }
-
-// Find staff schedule in the data
-function findStaffSchedule(searchTerm) {
-    const scheduleData = getScheduleData();
-    const results = [];
-    
-    scheduleData.forEach(day => {
-        // Check morning shift
-        Object.keys(day.morning).forEach(website => {
-            const staffName = day.morning[website];
-            if (staffName && staffName !== 'OFF DAY' && staffName.toLowerCase().includes(searchTerm.toLowerCase())) {
-                results.push({
-                    staffName: staffName,
-                    date: day.date,
-                    shift: 'morning',
-                    websites: website
-                });
-            }
-        });
-        
-        // Check evening shift
-        Object.keys(day.evening).forEach(website => {
-            const staffName = day.evening[website];
-            if (staffName && staffName !== 'OFF DAY' && staffName.toLowerCase().includes(searchTerm.toLowerCase())) {
-                results.push({
-                    staffName: staffName,
-                    date: day.date,
-                    shift: 'evening',
-                    websites: website
-                });
-            }
-        });
-    });
-    
-    return results;
-}
-
-// Get schedule data for reuse
-function getScheduleData() {
-    return [
-        {
-            date: '2026-03-13',
-            dayName: 'Friday',
-            morning: {
-            'SURIA88': 'Andi',
-            'HAKABET': 'Heno',
-            'VIOBET': 'Vera',
-            'TEMPO88': 'Kheiren',
-            'FILA88': 'Egi',
-            'IJOBET': 'Kris',
-            'HAHAWIN88': 'Andi',
-            'LOLA88': 'Chandy',
-        },
-            evening: {
-            'SURIA88': 'Heno',
-            'HAKABET': 'Egi',
-            'VIOBET': 'Adit',
-            'TEMPO88': 'Alfan',
-            'FILA88': 'Bima',
-            'IJOBET': 'Andi',
-            'HAHAWIN88': 'Kenny',
-            'LOLA88': '-'
-            }
-        },
-        {
-            date: '2026-03-14',
-            dayName: 'Saturday',
-            morning: {
-            'SURIA88': 'Anggie',
-            'HAKABET': 'Sindy',
-            'VIOBET': 'Kheiren',
-            'TEMPO88': 'Firman',
-            'FILA88': 'Angga',
-            'IJOBET': 'Kris',
-            'HAHAWIN88': 'Firman',
-            'OFF DAY UG': 'Vera, Andi'
-        },
-            evening: {
-            'SURIA88': 'Heno',
-            'HAKABET': 'Egi',
-            'VIOBET': 'Adit',
-            'TEMPO88': 'Alfan',
-            'FILA88': 'Bima',
-            'IJOBET': 'Jerry',
-            'HAHAWIN88': 'Kenny',
-            'OFF DAY UG': '-'
-            }
-        },
-        {
-            date: '2026-03-15',
-            dayName: 'Sunday',
-        morning: {
-            'SURIA88': 'Anggie',
-            'HAKABET': 'Sindy',
-            'VIOBET': 'Vera',
-            'TEMPO88': 'Kheiren',
-            'FILA88': 'Angga',
-            'IJOBET': 'Andi',
-            'HAHAWIN88': 'Kris',
-            'OFF DAY UG': '-'
-        },
-        evening: {
-            'SURIA88': 'Heno',
-            'HAKABET': 'Egi',
-            'VIOBET': 'Adit',
-            'TEMPO88': 'Alfan',
-            'FILA88': 'Bima',
-            'IJOBET': 'Jerry',
-            'HAHAWIN88': 'Kenny',
-            'OFF DAY UG': 'Firman'
-            }
-        },
-                {
-            date: '2026-03-16',
-            dayName: 'Monday',
-            morning: {
-            'SURIA88': 'Kris',
-            'HAKABET': 'Sindy',
-            'VIOBET': 'Vera',
-            'TEMPO88': 'Kheiren',
-            'FILA88': 'Angga',
-            'IJOBET': 'Andi',
-            'HAHAWIN88': 'Kheiren',
-            'OFF DAY UG': 'Heno, Egi'
-        },
-            evening: {
-            'SURIA88': 'Anggie',
-            'HAKABET': 'Firman',
-            'VIOBET': 'Adit',
-            'TEMPO88': 'Bima',
-            'FILA88': 'Alfan',
-            'IJOBET': 'Jerry',
-            'HAHAWIN88': 'Kenny',
-            'OFF DAY UG': '-'
-            }
-        },
-                        {
-            date: '2026-03-17',
-            dayName: 'Tuesday',
-            morning: {
-            'SURIA88': 'Heno',
-            'HAKABET': 'Sindy',
-            'VIOBET': 'Vera',
-            'TEMPO88': 'Kheiren',
-            'FILA88': 'Egi',
-            'IJOBET': 'Andi',
-            'HAHAWIN88': 'Kris',
-            'OFF DAY UG': '-'
-        },
-            evening: {
-            'SURIA88': 'Anggie',
-            'HAKABET': 'Firman',
-            'VIOBET': 'Adit',
-            'TEMPO88': 'Bima',
-            'FILA88': 'Angga',
-            'IJOBET': 'Jerry',
-            'HAHAWIN88': 'Kenny',
-            'OFF DAY UG': 'Alfan'
-            }
-        },
-                        {
-            date: '2026-03-18',
-            dayName: 'Wednesday',
-            morning: {
-            'SURIA88': 'Heno',
-            'HAKABET': 'Kris',
-            'VIOBET': 'Vera',
-            'TEMPO88': 'Kheiren',
-            'FILA88': 'Egi',
-            'IJOBET': 'Andi',
-            'HAHAWIN88': 'Kheiren',
-            'OFF DAY UG': 'Sindy'
-        },
-            evening: {
-            'SURIA88': 'Alfan',
-            'HAKABET': 'Firman',
-            'VIOBET': 'Adit',
-            'TEMPO88': 'Bima',
-            'FILA88': 'Angga',
-            'IJOBET': 'Jerry',
-            'HAHAWIN88': 'Kenny',
-            'OFF DAY UG': 'Anggie'
-            }
-        },
-                         {
-            date: '2026-03-19',
-            dayName: 'Thursday',
-            morning: {
-            'SURIA88': 'Heno',
-            'HAKABET': 'Sindy',
-            'VIOBET': 'Vera',
-            'TEMPO88': 'Kheiren',
-            'FILA88': 'Egi',
-            'IJOBET': 'Andi',
-            'HAHAWIN88': 'Kheiren',
-            'OFF DAY UG': 'Kris'
-        },
-            evening: {
-            'SURIA88': 'Anggie',
-            'HAKABET': 'Firman',
-            'VIOBET': 'Adit',
-            'TEMPO88': 'Bima',
-            'FILA88': 'Alfan',
-            'IJOBET': 'Jerry',
-            'HAHAWIN88': 'Kenny',
-            'OFF DAY UG': 'Angga'
-            }
-        },
-                                {
-            date: '2026-03-20',
-            dayName: 'Friday',
-            morning: {
-            'SURIA88': 'Heno',
-            'HAKABET': 'Sindy',
-            'VIOBET': 'Vera',
-            'TEMPO88': 'Kheiren',
-            'FILA88': 'Egi',
-            'IJOBET': 'Andi',
-            'HAHAWIN88': 'Kheiren',
-            'OFF DAY UG': 'Chandy'
-        },
-            evening: {
-            'SURIA88': 'Anggie',
-            'HAKABET': 'Alfan',
-            'VIOBET': 'Adit',
-            'TEMPO88': 'Bima',
-            'FILA88': 'Angga',
-            'IJOBET': 'Jerry',
-            'HAHAWIN88': 'Firman',
-            'OFF DAY UG': 'Vindy'
-            }
-        },
-
-        
-        
-    ];
-}
-
-// Continue with findStaffSchedule function
-function findStaffSchedule(searchTerm) {
-    const scheduleData = getScheduleData();
-    const results = [];
-    const websites = ['SURIA88', 'HAKABET', 'VIOBET', 'TEMPO88', 'FILA88', 'IJOBET', 'HAHAWIN88'];
-    
-    scheduleData.forEach(day => {
-        // Check morning shift
-        websites.forEach(website => {
-            const staff = day.morning[website];
-            if (staff && staff.toLowerCase().includes(searchTerm) && staff !== 'OFF DAY') {
-                results.push({
-                    staffName: staff,
-                    date: day.date,
-                    dayName: day.dayName,
-                    shift: 'morning',
-                    websites: website
-                });
-            }
-        });
-        
-        // Check evening shift
-        websites.forEach(website => {
-            const staff = day.evening[website];
-            if (staff && staff.toLowerCase().includes(searchTerm) && staff !== 'OFF DAY') {
-                results.push({
-                    staffName: staff,
-                    date: day.date,
-                    dayName: day.dayName,
-                    shift: 'evening',
-                    websites: website
-                });
-            }
-        });
-    });
-    
-    return results;
-}
-
-// Show staff details
-function showStaffDetails(staffName, websites, isOffDay) {
-    const staffDetailsSection = document.getElementById('staffDetails');
-    const staffDetailsContent = document.getElementById('staffDetailsContent');
-    
-    let detailsHTML = `
-        <div class="detail-item">
-            <div class="detail-label">Staff Name</div>
-            <div class="detail-value">${staffName}</div>
-        </div>
-    `;
-    
-    if (isOffDay) {
-        detailsHTML += `
-            <div class="detail-item">
-                <div class="detail-label">Status</div>
-                <div class="detail-value" style="color: #ef4444;">Off Day</div>
-            </div>
-        `;
-    } else {
-        detailsHTML += `
-            <div class="detail-item">
-                <div class="detail-label">Status</div>
-                <div class="detail-value" style="color: #22c55e;">Active</div>
-            </div>
-            <div class="detail-item">
-                <div class="detail-label">Assigned Websites</div>
-                <div class="detail-value">${websites}</div>
-            </div>
-        `;
-    }
-    
-    // Determine shift based on current time (for demo purposes)
-    const currentHour = new Date().getHours();
-    const shift = currentHour < 12 ? 'Morning' : 'Evening';
-    
-    detailsHTML += `
-        <div class="detail-item">
-            <div class="detail-label">Current Shift</div>
-            <div class="detail-value">${shift}</div>
-        </div>
-        <div class="detail-item">
-            <div class="detail-label">Last Updated</div>
-            <div class="detail-value">${new Date().toLocaleString()}</div>
-        </div>
-    `;
-    
-    staffDetailsContent.innerHTML = detailsHTML;
-    staffDetailsSection.style.display = 'block';
-    
-    // Scroll to details section
-    staffDetailsSection.scrollIntoView({ 
-        behavior: 'smooth', 
-        block: 'start' 
-    });
-    
-    // Auto-hide after 10 seconds
-    setTimeout(() => {
-        staffDetailsSection.style.display = 'none';
-    }, 10000);
-}
-
-
-
-// Update time every minute
-setInterval(() => {
-    updateCurrentDate();
-}, 60000);
-
-
-
-// Export functions for potential external use
-window.scheduleFunctions = {
-    searchStaff,
-    clearSearch,
-    showStaffDetails,
-    generateScheduleTable,
-    updateCurrentDate,
-    getScheduleData
-};
-
-// Generate schedule table with dummy data
-function generateScheduleTable() {
-    const tableBody = document.getElementById('scheduleTableBody');
-    
-    // Get schedule data
-    const scheduleData = getScheduleData();
-
-    let tableHTML = '';
-
-    scheduleData.forEach(day => {
-        const formattedDate = new Date(day.date).toLocaleDateString('en-US', {
-            day: 'numeric',
-            month: 'long',
-            year: 'numeric'
-        });
-
-        const websites = ['SURIA88', 'HAKABET', 'VIOBET', 'TEMPO88', 'FILA88', 'IJOBET', 'HAHAWIN88', 'OFF DAY UG'];
-
-        // Day shift row
-        tableHTML += `
-            <tr class="day-row">
-                <td class="date-cell" rowspan="2">${day.dayName}<br>${formattedDate}</td>
-                ${websites.map(website => {
-                    const assignment = day.morning[website];
-                    const cellClass = assignment === 'OFF DAY' ? 'off-day' : 'staff-assignment';
-                    return `<td class="${cellClass}">${assignment || '-'}</td>`;
-                }).join('')}
-            </tr>
-        `;
-
-        // Night shift row
-        tableHTML += `
-            <tr class="night-row">
-                ${websites.map(website => {
-                    const assignment = day.evening[website];
-                    const cellClass = assignment === 'OFF DAY' ? 'off-day' : 'staff-assignment';
-                    return `<td class="${cellClass}">${assignment || '-'}</td>`;
-                }).join('')}
-            </tr>
-        `;
-    });
-
-    tableBody.innerHTML = tableHTML;
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

@@ -8,83 +8,364 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div class="container">
-        <header class="header">
-            <h1>UG-TEAM SCHEDULE</h1>
-            <div class="current-date" id="currentDate"></div>
-        </header>
 
-        <div class="search-section">
-            <div class="search-container">
-                <input type="text" id="searchInput" placeholder="Search staff by name..." class="search-input">
-                <button class="search-btn" onclick="searchStaff()">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="11" cy="11" r="8"></circle>
-                        <path d="m21 21-4.35-4.35"></path>
-                    </svg>
-                </button>
-            </div>
-        </div>
-
-        <div class="shift-summary">
-            <div class="shift-row">
-                <span class="shift-label">🌅 DAY SHIFT :</span>
-                <div class="staff-bubbles-container">
-                    <span class="staff-bubble">Chandy</span>
-                    <span class="staff-bubble">Kris</span>
-                    <span class="staff-bubble">Sindy</span>
-                    <span class="staff-bubble">Kheiren</span>
-                    <span class="staff-bubble">Vera</span>
-                    <span class="staff-bubble">Andi</span>
-                    <span class="staff-bubble">Heno</span>
-                    <span class="staff-bubble">Egi</span>
-                    <span class="staff-bubble">Valvi</span>
-                </div>
-            </div>
-            <div class="shift-row">
-                <span class="shift-label">🌙 NIGHT SHIFT :</span>
-                <div class="staff-bubbles-container">
-                    <span class="staff-bubble">Vindy</span>
-                    <span class="staff-bubble">Kenny</span>
-                    <span class="staff-bubble">Angga</span>
-                    <span class="staff-bubble">Anggie</span>
-                    <span class="staff-bubble">Firman</span>
-                    <span class="staff-bubble">Alfan</span>
-                    <span class="staff-bubble">Bima</span>
-                    <span class="staff-bubble">Adit</span>
-                    <span class="staff-bubble">Jerry</span>
-                </div>
-            </div>
-        </div>
-
-        <div class="schedule-table-section">
-            <h2>March Schedule</h2>
-            <table class="schedule-table" id="scheduleTable">
-                <thead>
-                    <tr>
-                        <th class="date-column">Date</th>
-                        <th class="shift-column">SURIA88</th>
-                        <th class="shift-column">HAKABET</th>
-                        <th class="shift-column">VIOBET</th>
-                        <th class="shift-column">TEMPO88</th>
-                        <th class="shift-column">FILA88</th>
-                        <th class="shift-column">IJOBET</th>
-                        <th class="shift-column">HAHAWIN88</th>
-                        <th class="shift-column">LOLA88</th>
-                    </tr>
-                </thead>
-                <tbody id="scheduleTableBody">
-                    <!-- Will be populated by JavaScript -->
-                </tbody>
-            </table>
-        </div>
-
-        <div class="staff-details" id="staffDetails" style="display: none;">
-            <h3>Staff Details</h3>
-            <div id="staffDetailsContent"></div>
-        </div>
+  <!-- ADMIN LOGIN MODAL -->
+  <div class="modal-overlay" id="loginModal">
+    <div class="modal">
+      <div class="modal-icon">⬡</div>
+      <h2 class="modal-title">Admin Access</h2>
+      <p class="modal-sub">UG-Team Schedule Management</p>
+      <div class="form-group">
+        <label>Email</label>
+        <input type="email" id="loginEmail" placeholder="admin@email.com" autocomplete="email">
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input type="password" id="loginPassword" placeholder="••••••••" autocomplete="current-password">
+      </div>
+      <div class="modal-error" id="loginError"></div>
+      <button class="btn-primary" id="loginBtn" onclick="adminLogin()">
+        <span id="loginBtnText">Sign In</span>
+      </button>
+      <button class="btn-ghost" onclick="closeLoginModal()">Cancel</button>
     </div>
+  </div>
 
-    <script src="script.js"></script>
+  <!-- ADD / EDIT SCHEDULE MODAL -->
+  <div class="modal-overlay" id="scheduleModal">
+    <div class="modal modal-wide">
+      <div class="modal-header-row">
+        <h2 class="modal-title" id="scheduleModalTitle">Add Schedule</h2>
+        <button class="modal-close" onclick="closeScheduleModal()">✕</button>
+      </div>
+
+      <div class="form-grid" id="formDateSection">
+        <div class="form-group">
+          <label>From Date</label>
+          <input type="date" id="formDateFrom">
+        </div>
+        <div class="form-group" id="formDateToGroup">
+          <label>To Date <span style="color:var(--text-3);font-weight:400;text-transform:none">(leave same for single day)</span></label>
+          <input type="date" id="formDateTo">
+        </div>
+      </div>
+      <div class="form-grid" style="margin-top:-6px">
+        <div class="form-group">
+          <label>Shift</label>
+          <select id="formShift">
+            <option value="morning">☀ Morning</option>
+            <option value="evening">☽ Evening</option>
+          </select>
+        </div>
+        <div class="form-group" id="formDateSingle" style="display:none">
+          <label>Date</label>
+          <input type="date" id="formDate">
+        </div>
+      </div>
+
+      <div class="form-divider">
+        <span>Website Assignments</span>
+      </div>
+
+      <div class="form-grid form-grid-3">
+        <div class="form-group">
+          <label>SURIA88</label>
+          <select id="formSuria88"><option value="">— Empty —</option></select>
+        </div>
+        <div class="form-group">
+          <label>HAKABET</label>
+          <select id="formHakabet"><option value="">— Empty —</option></select>
+        </div>
+        <div class="form-group">
+          <label>VIOBET</label>
+          <select id="formViobet"><option value="">— Empty —</option></select>
+        </div>
+        <div class="form-group">
+          <label>TEMPO88</label>
+          <select id="formTempo88"><option value="">— Empty —</option></select>
+        </div>
+        <div class="form-group">
+          <label>FILA88</label>
+          <select id="formFila88"><option value="">— Empty —</option></select>
+        </div>
+        <div class="form-group">
+          <label>IJOBET</label>
+          <select id="formIjobet"><option value="">— Empty —</option></select>
+        </div>
+        <div class="form-group">
+          <label>HAHAWIN88</label>
+          <select id="formHahawin88"><option value="">— Empty —</option></select>
+        </div>
+        <div class="form-group">
+          <label>LOLA88</label>
+          <select id="formLola88"><option value="">— Empty —</option></select>
+        </div>
+        <div class="form-group">
+          <label>OFF DAY</label>
+          <input type="text" id="formOffday" placeholder="e.g. Vera, Andi">
+        </div>
+      </div>
+
+      <div class="modal-error" id="scheduleError"></div>
+      <div class="modal-actions">
+        <button class="btn-ghost" onclick="closeScheduleModal()">Cancel</button>
+        <button class="btn-primary" id="saveScheduleBtn" onclick="saveSchedule()">
+          <span id="saveBtnText">Save Schedule</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ADD / EDIT STAFF MODAL -->
+  <div class="modal-overlay" id="staffModal">
+    <div class="modal modal-sm">
+      <div class="modal-header-row">
+        <h2 class="modal-title" id="staffModalTitle">Add Staff</h2>
+        <button class="modal-close" onclick="closeStaffModal()">✕</button>
+      </div>
+      <div class="form-group">
+        <label>Name</label>
+        <input type="text" id="staffName" placeholder="e.g. Chandy">
+      </div>
+      <div class="form-group">
+        <label>Shift</label>
+        <select id="staffShift">
+          <option value="morning">☀ Morning (Day Shift)</option>
+          <option value="evening">☽ Evening (Night Shift)</option>
+        </select>
+      </div>
+      <div class="modal-error" id="staffError"></div>
+      <div class="modal-actions">
+        <button class="btn-ghost" onclick="closeStaffModal()">Cancel</button>
+        <button class="btn-primary" id="saveStaffBtn" onclick="saveStaff()">
+          <span id="saveStaffBtnText">Save</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- DELETE STAFF CONFIRM -->
+  <div class="modal-overlay" id="deleteStaffModal">
+    <div class="modal modal-sm">
+      <div class="modal-icon modal-icon-danger">⚠</div>
+      <h2 class="modal-title">Remove Staff</h2>
+      <p class="modal-sub" id="deleteStaffName">Are you sure?</p>
+      <div class="modal-actions">
+        <button class="btn-ghost" onclick="closeDeleteStaffModal()">Cancel</button>
+        <button class="btn-danger" onclick="confirmDeleteStaff()">Remove</button>
+      </div>
+    </div>
+  </div>
+
+
+  <div class="modal-overlay" id="deleteModal">
+    <div class="modal modal-sm">
+      <div class="modal-icon modal-icon-danger">⚠</div>
+      <h2 class="modal-title">Delete Schedule</h2>
+      <p class="modal-sub">This action cannot be undone. Are you sure?</p>
+      <div class="modal-actions">
+        <button class="btn-ghost" onclick="closeDeleteModal()">Cancel</button>
+        <button class="btn-danger" onclick="confirmDelete()">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- BULK DELETE CONFIRM -->
+  <div class="modal-overlay" id="bulkDeleteModal">
+    <div class="modal modal-sm">
+      <div class="modal-icon modal-icon-danger">⚠</div>
+      <h2 class="modal-title" id="bulkDeleteTitle">Delete Schedules</h2>
+      <p class="modal-sub" id="bulkDeleteSub">This action cannot be undone.</p>
+      <div class="modal-actions">
+        <button class="btn-ghost" onclick="closeBulkDeleteModal()">Cancel</button>
+        <button class="btn-danger" onclick="confirmBulkDelete()">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="app">
+
+    <!-- SIDEBAR -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-logo">
+        <div class="logo-mark">UG</div>
+        <div class="logo-text">
+          <span class="logo-main">UG-TEAM</span>
+          <span class="logo-sub">Schedule</span>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <a class="nav-item active" onclick="showView('schedule')">
+          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+          Schedule
+        </a>
+        <a class="nav-item" onclick="showView('staff')">
+          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          Staff
+        </a>
+      </nav>
+
+      <div class="sidebar-bottom">
+        <div id="adminPanel" style="display:none">
+          <button class="btn-add" onclick="openAddModal()">
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+            Add Schedule
+          </button>
+        </div>
+        <div class="auth-status" id="authStatus">
+          <div class="auth-dot viewer"></div>
+          <span id="authLabel">View Only</span>
+        </div>
+        <button class="btn-auth" id="authBtn" onclick="handleAuthClick()">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3"/></svg>
+          <span id="authBtnLabel">Admin Login</span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- MAIN CONTENT -->
+    <main class="main">
+
+      <!-- TOP BAR -->
+      <div class="topbar">
+        <div class="topbar-left">
+          <button class="menu-toggle" onclick="toggleSidebar()">
+            <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+          </button>
+          <div class="page-title" id="pageTitle">Schedule</div>
+        </div>
+        <div class="topbar-right">
+          <div class="live-time" id="liveTime"></div>
+          <div class="month-nav">
+            <button onclick="changeMonth(-1)">‹</button>
+            <span id="monthLabel">April 2026</span>
+            <button onclick="changeMonth(1)">›</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- SCHEDULE VIEW -->
+      <div class="view active" id="viewSchedule">
+
+        <!-- SHIFT ROSTER -->
+        <div class="roster-card">
+          <div class="roster-row">
+            <div class="roster-label day">
+              <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+              DAY SHIFT
+            </div>
+            <div class="roster-bubbles" id="dayShiftBubbles"></div>
+          </div>
+          <div class="roster-divider"></div>
+          <div class="roster-row">
+            <div class="roster-label night">
+              <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+              NIGHT SHIFT
+            </div>
+            <div class="roster-bubbles" id="nightShiftBubbles"></div>
+          </div>
+        </div>
+
+        <!-- SEARCH -->
+        <div class="search-bar">
+          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <input type="text" id="searchInput" placeholder="Search staff name..." oninput="handleSearch(this.value)">
+          <button class="search-clear" id="searchClear" onclick="clearSearch()" style="display:none">✕</button>
+        </div>
+
+        <!-- SEARCH RESULTS -->
+        <div id="searchResults" style="display:none" class="search-results-panel"></div>
+
+        <!-- SCHEDULE TABLE -->
+        <div class="table-card" id="tableSection">
+          <div class="table-header-row">
+            <div class="table-title" id="tableTitle">March 2026</div>
+            <div class="table-legend">
+              <span class="legend-item"><span class="legend-dot day"></span>Day</span>
+              <span class="legend-item"><span class="legend-dot night"></span>Night</span>
+              <span class="legend-item"><span class="legend-dot off"></span>Off Day</span>
+            </div>
+          </div>
+
+          <!-- BULK ACTION TOOLBAR (admin only) -->
+          <div class="bulk-toolbar" id="bulkToolbar" style="display:none">
+            <div class="bulk-toolbar-left">
+              <label class="checkbox-wrap">
+                <input type="checkbox" id="selectAll" onchange="toggleSelectAll(this.checked)">
+                <span class="checkmark"></span>
+              </label>
+              <span class="bulk-count" id="bulkCount">0 selected</span>
+            </div>
+            <div class="bulk-toolbar-right">
+              <button class="btn-bulk" onclick="bulkDeleteSelected()" id="btnDeleteSelected" disabled>
+                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                Delete Selected
+              </button>
+              <div class="bulk-divider"></div>
+              <button class="btn-bulk btn-bulk-outline" onclick="bulkDeleteShift('morning')">
+                ☀ Delete All Day
+              </button>
+              <button class="btn-bulk btn-bulk-outline" onclick="bulkDeleteShift('evening')">
+                ☽ Delete All Night
+              </button>
+              <button class="btn-bulk btn-bulk-danger" onclick="bulkDeleteAll()">
+                Delete All Month
+              </button>
+            </div>
+          </div>
+
+          <div class="table-scroll">
+            <table class="schedule-table" id="scheduleTable">
+              <thead>
+                <tr>
+                  <th class="col-check" id="checkHeader" style="display:none">
+                    <label class="checkbox-wrap">
+                      <input type="checkbox" id="selectAllHead" onchange="toggleSelectAll(this.checked)">
+                      <span class="checkmark"></span>
+                    </label>
+                  </th>
+                  <th class="col-date">Date</th>
+                  <th class="col-shift">Shift</th>
+                  <th>SURIA88</th>
+                  <th>HAKABET</th>
+                  <th>VIOBET</th>
+                  <th>TEMPO88</th>
+                  <th>FILA88</th>
+                  <th>IJOBET</th>
+                  <th>HAHAWIN88</th>
+                  <th>LOLA88</th>
+                  <th class="col-off">OFF DAY</th>
+                  <th class="col-action" id="actionHeader" style="display:none">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="scheduleBody">
+                <tr><td colspan="10" class="loading-row"><div class="spinner"></div>Loading schedule...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- STAFF VIEW -->
+      <div class="view" id="viewStaff">
+        <div class="staff-view-header">
+          <div>
+            <div class="page-title" style="font-size:1rem">Staff Members</div>
+            <div style="font-size:.8rem;color:var(--text-3);margin-top:2px" id="staffCount"></div>
+          </div>
+          <button class="btn-add" id="addStaffBtn" style="display:none;width:auto;padding:9px 16px" onclick="openAddStaffModal()">
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+            Add Staff
+          </button>
+        </div>
+        <div class="staff-grid" id="staffGrid"></div>
+      </div>
+
+    </main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="script.js"></script>
 </body>
 </html>
