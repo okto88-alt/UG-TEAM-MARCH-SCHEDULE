@@ -17,8 +17,8 @@ let scheduleData = [];
 let deleteTargetId = null;
 let editTargetId = null;
 
-const WEBSITES = ['suria88', 'hakabet', 'viobet', 'tempo88', 'fila88', 'ijobet', 'hahawin88', 'lola88'];
-const WEBSITE_LABELS = ['SURIA88', 'HAKABET', 'VIOBET', 'TEMPO88', 'FILA88', 'IJOBET', 'HAHAWIN88', 'LOLA88'];
+const WEBSITES = ['suria88', 'hakabet', 'viobet', 'tempo88', 'fila88', 'ijobet', 'hahawin88', 'lola88', 'kiko333'];
+const WEBSITE_LABELS = ['SURIA88', 'HAKABET', 'VIOBET', 'TEMPO88', 'FILA88', 'IJOBET', 'HAHAWIN88', 'LOLA88', 'KIKO333'];
 
 let staffData = []; // loaded from Supabase
 
@@ -48,6 +48,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   await loadStaff();
+  await loadRoster();
   await loadSchedule();
 
   // Live range preview
@@ -119,6 +120,9 @@ function setAdminMode(admin) {
     document.getElementById('checkHeader').style.display = 'none';
   }
 
+  const btnEditRoster = document.getElementById('btnEditRoster');
+  if (btnEditRoster) btnEditRoster.style.display = admin ? 'flex' : 'none';
+
   const addStaffBtn = document.getElementById('addStaffBtn');
   if (addStaffBtn) addStaffBtn.style.display = admin ? 'flex' : 'none';
 
@@ -182,12 +186,14 @@ document.addEventListener('keydown', (e) => {
 // ============================================
 async function loadSchedule() {
   const tbody = document.getElementById('scheduleBody');
-  tbody.innerHTML = `<tr><td colspan="12" class="loading-row"><div class="spinner"></div>Loading schedule...</td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="13" class="loading-row"><div class="spinner"></div>Loading schedule...</td></tr>`;
 
   // Get proper last day of month
   const lastDay = new Date(currentYear, currentMonth, 0).getDate();
   const startDate = `${currentYear}-${String(currentMonth).padStart(2,'0')}-01`;
   const endDate = `${currentYear}-${String(currentMonth).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
+
+  console.log('[loadSchedule] querying:', startDate, 'to', endDate);
 
   const { data, error } = await db
     .from('schedules')
@@ -198,9 +204,11 @@ async function loadSchedule() {
 
   if (error) {
     console.error('Supabase error:', error);
-    tbody.innerHTML = `<tr><td colspan="12" class="empty-row">Failed to load schedule: ${error.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="13" class="empty-row">Failed to load schedule: ${error.message}</td></tr>`;
     return;
   }
+
+  console.log('[loadSchedule] rows returned:', data?.length, data);
 
   // Sort: morning before evening after fetching
   data && data.sort((a, b) => {
@@ -219,7 +227,7 @@ function renderTable() {
   const tbody = document.getElementById('scheduleBody');
 
   if (!scheduleData.length) {
-    tbody.innerHTML = `<tr><td colspan="12" class="empty-row">No schedule found for this month.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="13" class="empty-row">No schedule found for this month.</td></tr>`;
     return;
   }
 
@@ -306,64 +314,117 @@ async function loadStaff() {
     .from('staff')
     .select('*')
     .eq('is_active', true)
-    .order('shift')
     .order('name');
 
   if (!error) {
     staffData = data || [];
-    renderRosterBubbles();
     renderStaffGrid();
     populateStaffDropdowns();
   }
+}
+
+// ============================================
+// ROSTER (MANUAL)
+// ============================================
+let rosterData = { morning: '', evening: '' }; // names string from DB
+
+async function loadRoster() {
+  const { data, error } = await db.from('roster').select('*');
+  if (error || !data) return;
+  data.forEach(r => {
+    if (r.shift === 'morning') rosterData.morning = r.names || '';
+    if (r.shift === 'evening') rosterData.evening = r.names || '';
+  });
+  renderRosterBubbles();
 }
 
 function renderRosterBubbles() {
   const dayEl = document.getElementById('dayShiftBubbles');
   const nightEl = document.getElementById('nightShiftBubbles');
 
-  const day = staffData.filter(s => s.shift === 'morning');
-  const night = staffData.filter(s => s.shift === 'evening');
+  const dayNames = rosterData.morning.split(',').map(n => n.trim()).filter(Boolean);
+  const nightNames = rosterData.evening.split(',').map(n => n.trim()).filter(Boolean);
 
-  dayEl.innerHTML = day.map(s => `<span class="bubble day">${s.name}</span>`).join('');
-  nightEl.innerHTML = night.map(s => `<span class="bubble night">${s.name}</span>`).join('');
+  dayEl.innerHTML = dayNames.length
+    ? dayNames.map(n => `<span class="bubble day">${n}</span>`).join('')
+    : `<span class="bubble-empty">— Empty —</span>`;
+
+  nightEl.innerHTML = nightNames.length
+    ? nightNames.map(n => `<span class="bubble night">${n}</span>`).join('')
+    : `<span class="bubble-empty">— Empty —</span>`;
+}
+
+function openRosterModal() {
+  // Build checkboxes for each shift from staffData
+  ['Day', 'Night'].forEach(label => {
+    const shift = label === 'Day' ? 'morning' : 'evening';
+    const el = document.getElementById(`roster${label}Picker`);
+    const selected = rosterData[shift].split(',').map(n => n.trim()).filter(Boolean);
+    el.innerHTML = staffData.map(s => `
+      <label class="roster-check-item">
+        <input type="checkbox" value="${s.name}" ${selected.includes(s.name) ? 'checked' : ''}>
+        <span>${s.name}</span>
+      </label>`).join('');
+  });
+  document.getElementById('rosterError').textContent = '';
+  document.getElementById('rosterModal').classList.add('open');
+}
+
+function closeRosterModal() {
+  document.getElementById('rosterModal').classList.remove('open');
+}
+
+async function saveRoster() {
+  const btn = document.getElementById('saveRosterBtn');
+  const errEl = document.getElementById('rosterError');
+
+  const getDayChecked = () => [...document.querySelectorAll('#rosterDayPicker input:checked')].map(i => i.value);
+  const getNightChecked = () => [...document.querySelectorAll('#rosterNightPicker input:checked')].map(i => i.value);
+
+  const morningNames = getDayChecked().join(', ');
+  const eveningNames = getNightChecked().join(', ');
+
+  btn.disabled = true;
+  document.getElementById('saveRosterBtnText').textContent = 'Saving...';
+
+  const updates = [
+    db.from('roster').update({ names: morningNames }).eq('shift', 'morning'),
+    db.from('roster').update({ names: eveningNames }).eq('shift', 'evening'),
+  ];
+  const results = await Promise.all(updates);
+  const failed = results.find(r => r.error);
+
+  btn.disabled = false;
+  document.getElementById('saveRosterBtnText').textContent = 'Save Roster';
+
+  if (failed) {
+    errEl.textContent = 'Error: ' + failed.error.message;
+    return;
+  }
+
+  rosterData.morning = morningNames;
+  rosterData.evening = eveningNames;
+  renderRosterBubbles();
+  closeRosterModal();
+  showToast('Roster updated ✓', 'success');
 }
 
 // ============================================
 // POPULATE STAFF DROPDOWNS
 // ============================================
 function populateStaffDropdowns(selectedValues = {}) {
-  const dayStaff = staffData.filter(s => s.shift === 'morning');
-  const nightStaff = staffData.filter(s => s.shift === 'evening');
-
   WEBSITES.forEach(site => {
     const el = document.getElementById('form' + capitalize(site));
     if (!el) return;
 
     el.innerHTML = `<option value="">— Empty —</option>`;
 
-    if (dayStaff.length) {
-      const dayGroup = document.createElement('optgroup');
-      dayGroup.label = '☀ Day Shift';
-      dayStaff.forEach(s => {
-        const opt = document.createElement('option');
-        opt.value = s.name;
-        opt.textContent = s.name;
-        dayGroup.appendChild(opt);
-      });
-      el.appendChild(dayGroup);
-    }
-
-    if (nightStaff.length) {
-      const nightGroup = document.createElement('optgroup');
-      nightGroup.label = '☽ Night Shift';
-      nightStaff.forEach(s => {
-        const opt = document.createElement('option');
-        opt.value = s.name;
-        opt.textContent = s.name;
-        nightGroup.appendChild(opt);
-      });
-      el.appendChild(nightGroup);
-    }
+    staffData.forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s.name;
+      opt.textContent = s.name;
+      el.appendChild(opt);
+    });
 
     if (selectedValues[site]) el.value = selectedValues[site];
   });
@@ -387,8 +448,6 @@ function renderStaffGrid() {
   grid.innerHTML = staffData.map((s, i) => {
     const initials = s.name.slice(0, 2).toUpperCase();
     const color = AVATAR_COLORS[i % AVATAR_COLORS.length];
-    const shiftLabel = s.shift === 'morning' ? '☀ Day Shift' : '☽ Night Shift';
-    const shiftClass = s.shift === 'morning' ? 'day' : 'night';
 
     const adminActions = isAdmin ? `
       <div class="staff-card-actions">
@@ -402,7 +461,6 @@ function renderStaffGrid() {
           <div class="staff-avatar" style="background:${color}">${initials}</div>
           <div>
             <div class="staff-name">${s.name}</div>
-            <span class="staff-shift-badge ${shiftClass}">${shiftLabel}</span>
           </div>
         </div>
         ${adminActions}
@@ -421,7 +479,6 @@ function openAddStaffModal() {
   document.getElementById('staffModalTitle').textContent = 'Add Staff';
   document.getElementById('saveStaffBtnText').textContent = 'Add Staff';
   document.getElementById('staffName').value = '';
-  document.getElementById('staffShift').value = 'morning';
   document.getElementById('staffError').textContent = '';
   document.getElementById('staffModal').classList.add('open');
   setTimeout(() => document.getElementById('staffName').focus(), 100);
@@ -434,7 +491,6 @@ function openEditStaffModal(id) {
   document.getElementById('staffModalTitle').textContent = 'Edit Staff';
   document.getElementById('saveStaffBtnText').textContent = 'Update';
   document.getElementById('staffName').value = s.name;
-  document.getElementById('staffShift').value = s.shift;
   document.getElementById('staffError').textContent = '';
   document.getElementById('staffModal').classList.add('open');
 }
@@ -445,7 +501,6 @@ function closeStaffModal() {
 
 async function saveStaff() {
   const name = document.getElementById('staffName').value.trim();
-  const shift = document.getElementById('staffShift').value;
   const errEl = document.getElementById('staffError');
   const btn = document.getElementById('saveStaffBtn');
 
@@ -457,9 +512,9 @@ async function saveStaff() {
 
   let error;
   if (editStaffId) {
-    ({ error } = await db.from('staff').update({ name, shift }).eq('id', editStaffId));
+    ({ error } = await db.from('staff').update({ name }).eq('id', editStaffId));
   } else {
-    ({ error } = await db.from('staff').insert({ name, shift, is_active: true }));
+    ({ error } = await db.from('staff').insert({ name, is_active: true }));
   }
 
   btn.disabled = false;
@@ -675,25 +730,34 @@ async function saveSchedule() {
     // For offday: use new value if filled, keep existing if not
     merged.offday = offday || prev.offday || null;
 
-    // Keep existing id if updating
-    if (prev.id) merged.id = prev.id;
-
     return merged;
   });
 
-  const { error } = await db.from('schedules').upsert(rows, {
-    onConflict: 'date,shift',
-    ignoreDuplicates: false
-  });
+  // Delete existing rows for these dates+shift first, then insert fresh
+  const existingIds = Object.values(existingMap).map(r => r.id).filter(Boolean);
+  if (existingIds.length) {
+    const { error: delError } = await db.from('schedules').delete().in('id', existingIds);
+    if (delError) {
+      btn.disabled = false;
+      document.getElementById('saveBtnText').textContent = 'Save Schedule';
+      errEl.textContent = 'Error deleting old data: ' + delError.message;
+      return;
+    }
+  }
+
+  console.log('[saveSchedule] inserting rows:', rows);
+  const { data: insertData, error } = await db.from('schedules').insert(rows).select();
 
   btn.disabled = false;
   document.getElementById('saveBtnText').textContent = 'Save Schedule';
 
   if (error) {
+    console.error('[saveSchedule] insert error:', error);
     errEl.textContent = 'Error: ' + error.message;
     return;
   }
 
+  console.log('[saveSchedule] insert success:', insertData);
   closeScheduleModal();
   showToast(`${totalDays} day${totalDays > 1 ? 's' : ''} saved ✓`, 'success');
   await loadSchedule();

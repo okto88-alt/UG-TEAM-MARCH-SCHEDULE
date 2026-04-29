@@ -101,6 +101,10 @@
           <select id="formLola88"><option value="">— Empty —</option></select>
         </div>
         <div class="form-group">
+          <label>KIKO333</label>
+          <select id="formKiko333"><option value="">— Empty —</option></select>
+        </div>
+        <div class="form-group">
           <label>OFF DAY</label>
           <input type="text" id="formOffday" placeholder="e.g. Vera, Andi">
         </div>
@@ -126,13 +130,6 @@
       <div class="form-group">
         <label>Name</label>
         <input type="text" id="staffName" placeholder="e.g. Chandy">
-      </div>
-      <div class="form-group">
-        <label>Shift</label>
-        <select id="staffShift">
-          <option value="morning">☀ Morning (Day Shift)</option>
-          <option value="evening">☽ Evening (Night Shift)</option>
-        </select>
       </div>
       <div class="modal-error" id="staffError"></div>
       <div class="modal-actions">
@@ -265,6 +262,11 @@
             </div>
             <div class="roster-bubbles" id="nightShiftBubbles"></div>
           </div>
+          <!-- Edit button, admin only -->
+          <button class="btn-roster-edit" id="btnEditRoster" style="display:none" onclick="openRosterModal()">
+            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            Edit Roster
+          </button>
         </div>
 
         <!-- SEARCH -->
@@ -335,12 +337,13 @@
                   <th>IJOBET</th>
                   <th>HAHAWIN88</th>
                   <th>LOLA88</th>
+                  <th>KIKO333</th>
                   <th class="col-off">OFF DAY</th>
                   <th class="col-action" id="actionHeader" style="display:none">Actions</th>
                 </tr>
               </thead>
               <tbody id="scheduleBody">
-                <tr><td colspan="10" class="loading-row"><div class="spinner"></div>Loading schedule...</td></tr>
+                <tr><td colspan="11" class="loading-row"><div class="spinner"></div>Loading schedule...</td></tr>
               </tbody>
             </table>
           </div>
@@ -363,6 +366,34 @@
       </div>
 
     </main>
+  </div>
+
+  <!-- EDIT ROSTER MODAL -->
+  <div class="modal-overlay" id="rosterModal">
+    <div class="modal modal-sm" style="max-width:480px;text-align:left">
+      <div class="modal-header-row">
+        <h2 class="modal-title">Edit Roster</h2>
+        <button class="modal-close" onclick="closeRosterModal()">✕</button>
+      </div>
+
+      <div class="form-group">
+        <label>☀ Day Shift — select staff</label>
+        <div class="roster-staff-picker" id="rosterDayPicker"></div>
+      </div>
+
+      <div class="form-group" style="margin-top:8px">
+        <label>☽ Night Shift — select staff</label>
+        <div class="roster-staff-picker" id="rosterNightPicker"></div>
+      </div>
+
+      <div class="modal-error" id="rosterError"></div>
+      <div class="modal-actions">
+        <button class="btn-ghost" onclick="closeRosterModal()">Cancel</button>
+        <button class="btn-primary" id="saveRosterBtn" onclick="saveRoster()" style="width:auto">
+          <span id="saveRosterBtnText">Save Roster</span>
+        </button>
+      </div>
+    </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>

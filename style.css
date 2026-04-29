@@ -180,6 +180,7 @@ body {
 .bubble.night { background: var(--indigo-light); border-color: var(--indigo-border); color: #3730A3; }
 .bubble.day:hover { background: #FEF3C7; }
 .bubble.night:hover { background: #E0E7FF; }
+.bubble-empty { font-size: .75rem; color: var(--ink-4); font-style: italic; padding: 4px 0; }
 
 .search-bar { display: flex; align-items: center; gap: 10px; background: var(--surface); border: 1.5px solid var(--cream-3); border-radius: var(--r); padding: 11px 18px; box-shadow: var(--s-xs); transition: border-color .15s, box-shadow .15s; }
 .search-bar:focus-within { border-color: var(--navy-2); box-shadow: 0 0 0 3px var(--navy-muted), var(--s-xs); }
@@ -423,4 +424,35 @@ td.check-cell { text-align: center; padding: 0 8px !important; }
 }
 .schedule-table tr:has(.row-check:checked) td.date-cell {
   background: #D8E4F0 !important;
+}
+/* ============================================ ROSTER EDIT */
+.btn-roster-edit {
+  display: flex; align-items: center; gap: 6px;
+  position: absolute; top: 14px; right: 16px;
+  padding: 5px 12px; border-radius: var(--r-xs);
+  background: var(--cream-2); border: 1.5px solid var(--cream-3);
+  color: var(--ink-3); font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: .72rem; font-weight: 700; cursor: pointer;
+  transition: all .12s; letter-spacing: .2px;
+}
+.btn-roster-edit:hover { background: var(--navy-light); color: var(--navy); border-color: var(--indigo-border); }
+
+.roster-staff-picker {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  padding: 10px; background: var(--cream-2);
+  border: 1.5px solid var(--cream-3); border-radius: var(--r-sm);
+  max-height: 160px; overflow-y: auto;
+}
+.roster-check-item {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 10px; background: var(--surface);
+  border: 1.5px solid var(--cream-3); border-radius: 20px;
+  font-size: .78rem; font-weight: 600; color: var(--ink-2);
+  cursor: pointer; transition: all .12s; white-space: nowrap;
+}
+.roster-check-item:hover { border-color: var(--navy-2); background: var(--navy-light); }
+.roster-check-item input[type="checkbox"] { display: none; }
+.roster-check-item:has(input:checked) {
+  background: var(--navy); border-color: var(--navy);
+  color: #fff;
 }
