@@ -23,10 +23,10 @@ const WEBSITE_LABELS = ['SURIA88', 'HAKABET', 'VIOBET', 'TEMPO88', 'FILA88', 'IJ
 let staffData = []; // loaded from Supabase
 
 const AVATAR_COLORS = [
-  '#2563EB','#7C3AED','#DB2777','#D97706','#059669',
-  '#DC2626','#0891B2','#65A30D','#9333EA','#EA580C',
-  '#0284C7','#16A34A','#CA8A04','#E11D48','#7C3AED',
-  '#0D9488','#B45309','#4F46E5','#BE185D','#15803D'
+  '#2563EB', '#7C3AED', '#DB2777', '#D97706', '#059669',
+  '#DC2626', '#0891B2', '#65A30D', '#9333EA', '#EA580C',
+  '#0284C7', '#16A34A', '#CA8A04', '#E11D48', '#7C3AED',
+  '#0D9488', '#B45309', '#4F46E5', '#BE185D', '#15803D'
 ];
 
 // ============================================
@@ -190,8 +190,8 @@ async function loadSchedule() {
 
   // Get proper last day of month
   const lastDay = new Date(currentYear, currentMonth, 0).getDate();
-  const startDate = `${currentYear}-${String(currentMonth).padStart(2,'0')}-01`;
-  const endDate = `${currentYear}-${String(currentMonth).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
+  const startDate = `${currentYear}-${String(currentMonth).padStart(2, '0')}-01`;
+  const endDate = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
 
   const { data, error } = await db
     .from('schedules')
@@ -411,18 +411,25 @@ async function saveRoster() {
 function populateStaffDropdowns(selectedValues = {}) {
   WEBSITES.forEach(site => {
     const el = document.getElementById('form' + capitalize(site));
-    if (!el) return;
+    const el2 = document.getElementById('form' + capitalize(site) + '_2');
 
-    el.innerHTML = `<option value="">— Empty —</option>`;
-
-    staffData.forEach(s => {
-      const opt = document.createElement('option');
-      opt.value = s.name;
-      opt.textContent = s.name;
-      el.appendChild(opt);
+    [el, el2].forEach((dropdown, idx) => {
+      if (!dropdown) return;
+      dropdown.innerHTML = `<option value="">— Empty —</option>`;
+      staffData.forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s.name;
+        opt.textContent = s.name;
+        dropdown.appendChild(opt);
+      });
     });
 
-    if (selectedValues[site]) el.value = selectedValues[site];
+    // Parse existing value "Nama1 / Nama2" back into 2 dropdowns
+    if (selectedValues[site]) {
+      const parts = selectedValues[site].split(' / ');
+      if (el) el.value = parts[0] || '';
+      if (el2) el2.value = parts[1] || '';
+    }
   });
 }
 
@@ -441,9 +448,9 @@ function renderStaffGrid() {
 
   if (countEl) countEl.textContent = `${staffData.length} members`;
 
-  const leaders    = staffData.filter(s => s.role === 'leader');
+  const leaders = staffData.filter(s => s.role === 'leader');
   const assistants = staffData.filter(s => s.role === 'assistant');
-  const staff      = staffData.filter(s => !s.role || s.role === 'staff');
+  const staff = staffData.filter(s => !s.role || s.role === 'staff');
 
   function makeCard(s, i, tier) {
     const crown = tier === 'leader' ? '<div class="pyr-crown-wrap"><span class="pyr-crown">👑</span></div>' : '';
@@ -464,7 +471,7 @@ function renderStaffGrid() {
         ${crown}
         <div class="pyr-avatar-bot pyr-avatar-${tier}">
           <img src="${avatarUrl}" alt="${s.name}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
-          <div class="pyr-avatar-fallback" style="display:none">${s.name.slice(0,2).toUpperCase()}</div>
+          <div class="pyr-avatar-fallback" style="display:none">${s.name.slice(0, 2).toUpperCase()}</div>
         </div>
         <div class="pyr-name">${s.name}</div>
         ${badge}
@@ -478,7 +485,7 @@ function renderStaffGrid() {
       <div class="pyr-tier-wrap">
         <div class="pyr-tier-label pyr-label-leader">👑 Leader</div>
         <div class="pyr-tier">
-          ${leaders.map((s,i) => makeCard(s, i, 'leader')).join('')}
+          ${leaders.map((s, i) => makeCard(s, i, 'leader')).join('')}
         </div>
       </div>
       <div class="pyr-connector"></div>` : ''}
@@ -487,7 +494,7 @@ function renderStaffGrid() {
       <div class="pyr-tier-wrap">
         <div class="pyr-tier-label pyr-label-assistant">⭐ Assistant Leader</div>
         <div class="pyr-tier">
-          ${assistants.map((s,i) => makeCard(s, i, 'assistant')).join('')}
+          ${assistants.map((s, i) => makeCard(s, i, 'assistant')).join('')}
         </div>
       </div>
       <div class="pyr-connector"></div>` : ''}
@@ -496,7 +503,7 @@ function renderStaffGrid() {
       <div class="pyr-tier-wrap">
         <div class="pyr-tier-label pyr-label-staff">👥 Staff</div>
         <div class="pyr-tier pyr-tier-staff">
-          ${staff.map((s,i) => makeCard(s, i, 'staff')).join('')}
+          ${staff.map((s, i) => makeCard(s, i, 'staff')).join('')}
         </div>
       </div>` : ''}
     </div>`;
@@ -636,7 +643,9 @@ function clearScheduleForm() {
   document.getElementById('formShift').value = 'morning';
   WEBSITES.forEach(site => {
     const el = document.getElementById('form' + capitalize(site));
+    const el2 = document.getElementById('form' + capitalize(site) + '_2');
     if (el) el.value = '';
+    if (el2) el2.value = '';
   });
   document.getElementById('formOffday').value = '';
   document.getElementById('scheduleError').textContent = '';
@@ -689,7 +698,10 @@ async function saveSchedule() {
   const sitePayload = {};
   WEBSITES.forEach(site => {
     const el = document.getElementById('form' + capitalize(site));
-    sitePayload[site] = el ? (el.value.trim() || null) : null;
+    const el2 = document.getElementById('form' + capitalize(site) + '_2');
+    const val1 = el ? el.value.trim() : '';
+    const val2 = el2 ? el2.value.trim() : '';
+    sitePayload[site] = [val1, val2].filter(Boolean).join(' / ') || null;
   });
   const offday = document.getElementById('formOffday').value.trim() || null;
 
